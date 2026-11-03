@@ -10,9 +10,10 @@
   <header class="app-header">
     <h1>Sales Call Management</h1>
     <div class="call-controls">
-      <label for="call-select">Transcript</label>
+      <label for="call-select">Ingest call</label>
       <select id="call-select"></select>
-      <button id="ingest-button" type="button">Ingest call</button>
+      <button id="ingest-button" type="button">Ingest</button>
+      <span id="ingest-status" class="ingest-status" role="status" aria-live="polite"></span>
     </div>
   </header>
 
@@ -30,16 +31,28 @@
         <div id="pipeline-by-stage" class="pipeline-by-stage"></div>
       </div>
 
-      <div class="region" aria-labelledby="activity-heading">
-        <h3 id="activity-heading" class="region-title">Recent activity</h3>
-        <div id="recent-activity" class="recent-activity"></div>
-      </div>
-
       <div class="region" aria-labelledby="opps-heading">
         <h3 id="opps-heading" class="region-title">Open opportunities</h3>
-        <table id="open-opportunities" class="open-opportunities">
-          <tbody></tbody>
-        </table>
+        <div class="table-wrap">
+          <table id="open-opportunities" class="open-opportunities">
+            <thead>
+              <tr>
+                <th scope="col">Account</th>
+                <th scope="col">Opportunity</th>
+                <th scope="col">Stage</th>
+                <th scope="col" class="num">Amount</th>
+                <th scope="col">Close date</th>
+                <th scope="col" class="num">Probability</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="region" aria-labelledby="activity-heading">
+        <h3 id="activity-heading" class="region-title">Recent activity</h3>
+        <ul id="recent-activity" class="recent-activity"></ul>
       </div>
     </section>
 

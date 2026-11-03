@@ -34,6 +34,8 @@ CALLS_DIR = BASE_DIR / "data" / "calls"
 STATIC_DIR = BASE_DIR / "static"
 
 RECENT_ACTIVITY_LIMIT = 10
+RECENT_ACTIVITY_DISPLAY = 8
+CLOSED_STAGES = frozenset({"Closed Won", "Closed Lost"})
 
 app = FastAPI(title="Sales Call Management API")
 
@@ -62,29 +64,76 @@ class ChatRequest(BaseModel):
 def build_dashboard() -> dict:
     """Aggregate the data the dashboard UI needs into a single dict.
 
-    This is pure Python with no LLM involvement. It is expected to combine:
+    This is pure Python with no LLM involvement. It combines:
 
     - ``crm.pipeline_summary()`` for the stat tiles and the "Pipeline by stage"
       breakdown,
-    - ``crm.list_activities(limit=RECENT_ACTIVITY_LIMIT)`` for the "Recent
-      activity" feed,
+    - ``crm.list_activities(limit=RECENT_ACTIVITY_LIMIT)`` (newest first) for the
+      "Recent activity" feed, trimmed to the most recent entries,
     - the open opportunities (every opportunity whose stage is not a closed
-      stage) from ``crm.list_opportunities(...)`` for the "Open opportunities"
-      table.
+      stage) from ``crm.list_opportunities()`` for the "Open opportunities"
+      table, sorted by amount descending.
 
-    Returns a JSON-serializable dict shaped roughly as::
+    Account names are resolved by matching each ``account_id`` against
+    ``crm.list_accounts()``. The returned dict is JSON-serializable and shaped
+    as::
 
         {
-            "pipeline": <crm.pipeline_summary() result>,
-            "recent_activity": [<activity dict>, ...],
-            "open_opportunities": [<opportunity dict>, ...]
+            "stats": {
+                "open_pipeline", "weighted_pipeline", "open_count", "win_rate"
+            },
+            "pipeline_by_stage": [<stage summary dict>, ...],
+            "recent_activity": [<activity dict with "account_name">, ...],
+            "open_opportunities": [<open opportunity dict>, ...]
         }
     """
-    raise NotImplementedError(
-        "chunk-N owner: aggregate crm.pipeline_summary(), "
-        "crm.list_activities(limit=RECENT_ACTIVITY_LIMIT), and open "
-        "opportunities into a single JSON-serializable dashboard dict"
+    summary = crm.pipeline_summary()
+    by_stage = summary["by_stage"]
+    totals = summary["totals"]
+
+    weighted_pipeline = sum(
+        row["weighted_amount"]
+        for row in by_stage
+        if row["stage"] not in CLOSED_STAGES
     )
+
+    account_names = {
+        account["id"]: account["name"] for account in crm.list_accounts()
+    }
+
+    recent_activity = []
+    for activity in crm.list_activities(limit=RECENT_ACTIVITY_LIMIT)[:RECENT_ACTIVITY_DISPLAY]:
+        entry = dict(activity)
+        entry["account_name"] = account_names.get(activity.get("account_id"))
+        recent_activity.append(entry)
+
+    open_opportunities = [
+        {
+            "account_name": account_names.get(opp.get("account_id")),
+            "name": opp["name"],
+            "stage": opp["stage"],
+            "amount": opp["amount"],
+            "currency": opp["currency"],
+            "close_date": opp["close_date"],
+            "probability": opp["probability"],
+            "next_step": opp["next_step"],
+        }
+        for opp in crm.list_opportunities()
+        if opp["stage"] not in CLOSED_STAGES
+    ]
+    open_opportunities.sort(key=lambda opp: opp["amount"], reverse=True)
+
+    return {
+        "stats": {
+            "open_pipeline": totals["open_amount"],
+            "weighted_pipeline": weighted_pipeline,
+            "open_count": totals["open_count"],
+            "win_rate": totals["win_rate"],
+        },
+        "pipeline_by_stage": by_stage,
+        "recent_activity": recent_activity,
+        "open_opportunities": open_opportunities,
+    }
 
 
 @app.get("/api/dashboard")
