@@ -23,7 +23,7 @@ from pathlib import Path
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 load_dotenv()
 
@@ -226,7 +226,8 @@ def mark_processed(name: str) -> None:
 
 app = FastAPI()
 
-NAV = [("/", "Prospects"), ("/opportunities", "Opportunities"), ("/calls", "Process calls")]
+NAV = [("/", "Prospects"), ("/opportunities", "Opportunities"), ("/calls", "Process calls"), ("/architecture", "Architecture")]
+ARCHITECTURE = Path("sales-call-management/static/architecture.html")
 
 
 def call_bar() -> str:
@@ -242,9 +243,11 @@ def call_bar() -> str:
                     f'<button class="sm-call sm-call-{state}" title="{html.escape(tip)}" aria-label="{html.escape(tip)}">{label}</button></form>')
     cta = (f'<form method="post" action="/calls/{calls[nxt - 1].name}/process">'
            f'<button class="sm-btn-dark">{ICON_ARROW}Process call {nxt}</button></form>') if nxt else ""
+    reset = ('<form method="post" action="/reset" onsubmit="return confirm(\'Clear all prospect memory and mark every call unprocessed?\')">'
+             '<button class="sm-btn-outline" style="font-family:inherit;cursor:pointer" title="Delete everything the agent remembers so you can rerun the calls">Clear memory</button></form>')
     return (f'<div class="sm-calls-meta"><span class="sm-label">CALLS</span>'
             f'<span style="font-size:13px"><b style="font-weight:600">{len(done & {p.name for p in calls})}</b> of {len(calls)} processed</span></div>'
-            f'<div class="sm-call-list">{buttons}</div>{cta}')
+            f'<div class="sm-call-list">{buttons}</div><div style="display:flex;gap:8px">{reset}{cta}</div>')
 
 
 def page(title: str, body: str, active: str = "/", refresh: bool = False, wide: bool = False) -> HTMLResponse:
@@ -530,3 +533,40 @@ def job(job_id: str):
         body = (f'<div class="alert" data-variant="destructive"><h2>Agent run failed</h2>'
                 f'<section><pre class="whitespace-pre-wrap text-sm">{html.escape(j["result"])}</pre></section></div>')
     return page(j["label"], head + body + f'<a class="btn mt-4" data-variant="outline" href="{j["back"]}">Back</a>')
+
+
+@app.get("/architecture", response_class=HTMLResponse)
+def architecture():
+    # The diagram is a self-contained page with its own (dark) styles, so embed it rather than restyle it.
+    if not ARCHITECTURE.exists():
+        raise HTTPException(404, f"{ARCHITECTURE} not found — pull main")
+    return page("Architecture",
+                '<iframe src="/architecture/diagram" title="System architecture diagram" '
+                'style="width:100%;height:calc(100vh - 210px);min-height:640px;border:1px solid var(--sm-line);'
+                'border-radius:8px;background:#0f172a"></iframe>',
+                active="/architecture", wide=True)
+
+
+@app.get("/architecture/diagram")
+def architecture_diagram():
+    return FileResponse(ARCHITECTURE, media_type="text/html")
+
+
+@app.post("/reset")
+def reset():
+    """Delete every memory in the current store and its processed-call list. Keeps the store and agent."""
+    if any(j["status"] == "running" for j in JOBS.values()):
+        raise HTTPException(409, "An agent run is still in progress — wait for it to finish, then clear.")
+    _, store_id = ids()
+    client = Anthropic()
+    for item in client.beta.memory_stores.memories.list(store_id, path_prefix="/").data:
+        if item.type == "memory":
+            client.beta.memory_stores.memories.delete(item.id, memory_store_id=store_id)
+    with _processed_lock:
+        try:
+            data = json.loads(PROCESSED_PATH.read_text())
+        except (FileNotFoundError, ValueError):
+            data = {}
+        data.pop(store_id, None)
+        PROCESSED_PATH.write_text(json.dumps(data, indent=2))
+    return RedirectResponse("/opportunities", status_code=303)
