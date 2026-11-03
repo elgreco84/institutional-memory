@@ -108,10 +108,14 @@ def ingest(call_path) -> dict:
     before upserting; reconciliation (never duplicating) is the agent's
     responsibility per ``DISCOVERY_SYSTEM_PROMPT``.
     """
-    raise NotImplementedError(
-        "Load the transcript via load_transcript(call_path), build a user message "
-        "inlining the transcript text, the transcript filename, and the ingestion "
-        "instructions, call run_loop(DISCOVERY_SYSTEM_PROMPT, messages, "
-        "allowed_tools=READ_TOOL_NAMES + WRITE_TOOL_NAMES), and return "
-        "{'call': Path(call_path).name, 'summary': <run_loop result>}."
+    name = Path(call_path).name
+    transcript = load_transcript(call_path)
+    user = (
+        "Below is a sales-call transcript. Check the current CRM with the read tools first, "
+        "then create or UPDATE records with the write tools (reconcile, do not duplicate), and "
+        "log the call as an activity. Finish with a concise plain-text summary of exactly what "
+        f"you created or changed.\n\n===== TRANSCRIPT: {name} =====\n{transcript}"
     )
+    messages = [{"role": "user", "content": user}]
+    summary = run_loop(DISCOVERY_SYSTEM_PROMPT, messages, allowed_tools=READ_TOOL_NAMES + WRITE_TOOL_NAMES)
+    return {"call": name, "summary": summary}

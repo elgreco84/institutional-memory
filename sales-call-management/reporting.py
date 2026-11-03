@@ -73,9 +73,8 @@ def answer(session_id: str, message: str, stream_cb=None) -> str:
         follow-up questions in the session retain context.
       - Return the assistant reply text (the string returned by ``run_loop``).
     """
-    raise NotImplementedError(
-        "Get the session history via get_history(session_id), append the user "
-        "message, call run_loop(REPORTING_SYSTEM_PROMPT, history, "
-        "allowed_tools=READ_TOOL_NAMES, stream_cb=stream_cb), append the assistant "
-        "reply to the history, and return the reply text."
-    )
+    history = get_history(session_id)
+    history.append({"role": "user", "content": message})
+    reply = run_loop(REPORTING_SYSTEM_PROMPT, history, allowed_tools=READ_TOOL_NAMES, stream_cb=stream_cb)
+    history.append({"role": "assistant", "content": reply})
+    return reply
