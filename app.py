@@ -22,7 +22,7 @@ from pathlib import Path
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 load_dotenv()
@@ -181,9 +181,12 @@ def prospects() -> dict[str, str]:
 JOBS: dict[str, dict] = {}
 
 
-def start_job(label: str, back: str, title: str, message: str, on_done=None) -> str:
+LAST_CALL_JOB: dict[str, str] = {}  # {"id": job_id, "call": n} of the most recent call run
+
+
+def start_job(label: str, back: str, title: str, message: str, on_done=None, call: str = "") -> str:
     job_id = uuid.uuid4().hex[:8]
-    JOBS[job_id] = {"label": label, "back": back, "status": "running", "result": ""}
+    JOBS[job_id] = {"label": label, "back": back, "status": "running", "result": "", "call": call}
 
     def work() -> None:
         try:
@@ -230,28 +233,42 @@ NAV = [("/", "Prospects"), ("/opportunities", "Opportunities"), ("/calls", "Proc
 ARCHITECTURE = Path("sales-call-management/static/architecture.html")
 
 
+def running_calls() -> set[str]:
+    return {j["call"] for j in JOBS.values() if j["status"] == "running" and j.get("call")}
+
+
+def safe_next(path: str) -> str:
+    """Only allow redirects back to a local page (no //host or scheme)."""
+    return path if path.startswith("/") and not path.startswith("//") else "/"
+
+
 def call_bar() -> str:
-    """Square buttons 1..n: green+check once processed, pink for the next one, plus 'Process call N'."""
-    calls, done = sales_calls(), processed_calls()
+    """Square buttons 1..n: green+check once processed, pink for the next one, plus 'Process call N'.
+    Forms carry data-stay so the page you're on is where you land after clicking (see page())."""
+    calls, done, running = sales_calls(), processed_calls(), running_calls()
     nxt = next((i for i, p in enumerate(calls, 1) if p.name not in done), None)
     buttons = ""
     for i, p in enumerate(calls, 1):
-        state = "done" if p.name in done else "next" if i == nxt else "todo"
+        state = "running" if p.name in running else "done" if p.name in done else "next" if i == nxt else "todo"
         label = ICON_CHECK if state == "done" else str(i)
-        tip = f"Call {i}: {p.name}" + (" — processed, click to run again" if state == "done" else "")
-        buttons += (f'<form method="post" action="/calls/{p.name}/process">'
+        tip = f"Call {i}: {p.name}" + {"done": " — processed, click to run again", "running": " — agent running…"}.get(state, "")
+        buttons += (f'<form method="post" action="/calls/{p.name}/process" data-stay>'
                     f'<button class="sm-call sm-call-{state}" title="{html.escape(tip)}" aria-label="{html.escape(tip)}">{label}</button></form>')
-    cta = (f'<form method="post" action="/calls/{calls[nxt - 1].name}/process">'
+    cta = (f'<form method="post" action="/calls/{calls[nxt - 1].name}/process" data-stay>'
            f'<button class="sm-btn-dark">{ICON_ARROW}Process call {nxt}</button></form>') if nxt else ""
     reset = ('<form method="post" action="/reset" onsubmit="return confirm(\'Clear all prospect memory and mark every call unprocessed?\')">'
              '<button class="sm-btn-outline" style="font-family:inherit;cursor:pointer" title="Delete everything the agent remembers so you can rerun the calls">Clear memory</button></form>')
     return (f'<div class="sm-calls-meta"><span class="sm-label">CALLS</span>'
-            f'<span style="font-size:13px"><b style="font-weight:600">{len(done & {p.name for p in calls})}</b> of {len(calls)} processed</span></div>'
+            f'<span style="font-size:13px"><b style="font-weight:600">{len(done & {p.name for p in calls})}</b> of {len(calls)} processed</span>'
+            + (f'<a href="/jobs/{LAST_CALL_JOB["id"]}" style="font-size:12px;color:var(--sm-muted)">'
+               f'{"Running" if running else "Last run"}: call {LAST_CALL_JOB["call"]} — {"view" if running else "summary"}</a>'
+               if LAST_CALL_JOB else "")
+            + '</div>'
             f'<div class="sm-call-list">{buttons}</div><div style="display:flex;gap:8px">{reset}{cta}</div>')
 
 
 def page(title: str, body: str, active: str = "/", refresh: bool = False, wide: bool = False) -> HTMLResponse:
-    meta = '<meta http-equiv="refresh" content="4">' if refresh else ""
+    meta = '<meta http-equiv="refresh" content="4">' if refresh or running_calls() else ""
     nav = "".join(
         f'<a href="{href}" class="sm-tab"{" aria-current=page" if href == active else ""}>{label}</a>'
         for href, label in NAV
@@ -287,6 +304,8 @@ def page(title: str, body: str, active: str = "/", refresh: bool = False, wide: 
   .sm-call{{width:36px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center;font:500 13px Inter,sans-serif;cursor:pointer;border:1px solid var(--sm-line);background:#fff;color:var(--sm-muted)}}
   .sm-call-todo:hover{{border-color:var(--sm-muted)}}
   .sm-call-done{{background:var(--sm-ok);border-color:var(--sm-ok);color:#fff}} .sm-call-done:hover{{background:#166534}}
+  .sm-call-running{{background:#fffbeb;border:1.5px solid #f59e0b;color:#b45309;font-weight:600;animation:sm-pulse 1.2s ease-in-out infinite}}
+  @keyframes sm-pulse{{50%{{opacity:.45}}}}
   .sm-call-next{{border:1.5px solid var(--sm-accent);background:#fff1f5;color:var(--sm-fg);font-weight:600}}
   .sm-btn-dark{{height:36px;padding:0 14px;border-radius:6px;border:1px solid var(--sm-fg);background:var(--sm-fg);color:#fff;font:500 14px Inter,sans-serif;display:flex;align-items:center;gap:8px;cursor:pointer}}
   .sm-btn-dark:hover{{background:#292524}}
@@ -348,6 +367,12 @@ def page(title: str, body: str, active: str = "/", refresh: bool = False, wide: 
     }});
   }});
 </script>
+<script>
+  // Call buttons post back to the page you're on, so you stay on the same tab.
+  document.querySelectorAll('form[data-stay]').forEach(f => {{
+    f.action += (f.action.includes('?') ? '&' : '?') + 'next=' + encodeURIComponent(location.pathname);
+  }});
+</script>
 </body></html>""")
 
 
@@ -356,8 +381,9 @@ def md(text: str) -> str:
     return f'<div class="md">{html.escape(text)}</div>'
 
 
-def button(action: str, label: str, attrs: str = "") -> str:
-    return f'<form method="post" action="{action}" class="inline"><button class="btn" {attrs}>{label}</button></form>'
+def button(action: str, label: str, attrs: str = "", stay: bool = False) -> str:
+    return (f'<form method="post" action="{action}" class="inline"{" data-stay" if stay else ""}>'
+            f'<button class="btn" {attrs}>{label}</button></form>')
 
 
 def first_line(content: str, prefix: str) -> str:
@@ -493,7 +519,7 @@ def calls():
         f'<tr><td><div class="font-medium">{html.escape(first_line(p.read_text(), "# ").lstrip("# ").removeprefix("Discovery Call: ") or p.name)}</div>'
         f'<div class="text-xs text-muted-foreground">{p.name}</div></td>'
         f'<td class="text-sm text-muted-foreground whitespace-nowrap">{html.escape(first_line(p.read_text(), "- **Date:**").replace("- **Date:**", "").strip())}</td>'
-        f'<td class="text-right">{button(f"/calls/{p.name}/process", "Process", 'data-size="sm" data-variant="outline"')}</td></tr>'
+        f'<td class="text-right">{button(f"/calls/{p.name}/process", "Process", 'data-size="sm" data-variant="outline"', stay=True)}</td></tr>'
         for p in sales_calls()
     )
     return page("Process calls",
@@ -505,7 +531,7 @@ def calls():
 
 
 @app.post("/calls/{name}/process")
-def process(name: str):
+def process(name: str, back: str = Query("", alias="next")):
     path = next((p for p in sales_calls() if p.name == name), None)  # whitelist — no path traversal
     if path is None:
         raise HTTPException(404, "Unknown transcript")
@@ -513,8 +539,10 @@ def process(name: str):
                     "Below is a discovery-call transcript. Check your memory first, then create or UPDATE "
                     "the prospect's file in prospects/ following your protocol. Then reply with at most 5 "
                     f"short bullets: what changed in BANT and anything corrected.\n\n===== TRANSCRIPT: {name} =====\n{path.read_text()}",
-                    on_done=lambda: mark_processed(name))
-    return RedirectResponse(f"/jobs/{job}", status_code=303)
+                    on_done=lambda: mark_processed(name), call=name)
+    LAST_CALL_JOB.update(id=job, call=str([c.name for c in sales_calls()].index(name) + 1))
+    # From the calls bar we go back to the page you were on; otherwise show the run page.
+    return RedirectResponse(safe_next(back) if back else f"/jobs/{job}", status_code=303)
 
 
 @app.get("/jobs/{job_id}", response_class=HTMLResponse)
