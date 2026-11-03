@@ -541,9 +541,20 @@ def architecture():
     if not ARCHITECTURE.exists():
         raise HTTPException(404, f"{ARCHITECTURE} not found — pull main")
     return page("Architecture",
-                '<iframe src="/architecture/diagram" title="System architecture diagram" '
-                'style="width:100%;height:calc(100vh - 210px);min-height:640px;border:1px solid var(--sm-line);'
-                'border-radius:8px;background:#0f172a"></iframe>',
+                # Size the frame to the diagram's own height (same origin) so there's no inner scrollbar.
+                '<iframe id="arch" src="/architecture/diagram" title="System architecture diagram" scrolling="no" '
+                'style="display:block;width:100%;height:80vh;border:0;border-radius:8px;background:#0f172a"></iframe>'
+                '<script>(() => {'
+                'const f = document.getElementById("arch");'
+                'const fit = () => { const d = f.contentDocument; if (d && d.body) {'
+                ' d.documentElement.style.overflow = "hidden";'
+                # the diagram's body has min-height:100vh, which would track the frame height; measure content instead
+                ' d.body.style.minHeight = "0";'
+                ' f.style.height = Math.ceil(d.body.getBoundingClientRect().height) + "px"; } };'
+                'f.addEventListener("load", () => { fit();'
+                ' new ResizeObserver(fit).observe(f.contentDocument.body); });'
+                'addEventListener("resize", fit);'
+                '})();</script>',
                 active="/architecture", wide=True)
 
 
