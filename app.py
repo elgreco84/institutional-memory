@@ -53,15 +53,15 @@ Each file uses these sections, in this order:
 **Industry:** ... | **AI need:** ... | **Stage:** ... | **Last call:** <date>
 
 ## BANT
-| | Status | What we know | Source |
-|---|---|---|---|
-| Budget | Known / Partial / Unknown | ... | call date + timestamp |
-| Authority | ... | who actually decides / signs | ... |
-| Need | ... | ... | ... |
-| Timeline | ... | ... | ... |
-Only mark an item Known when a call established it — a guess or a hint is
-Partial. When a later call corrects an item, update it and add "(corrected
-<date>: was ...)".
+| | Status | Headline | Detail | Source |
+|---|---|---|---|---|
+| Budget | Known / Partial / Unknown | ≤6 words, e.g. "~$550K available" | one sentence | call date + timestamp |
+| Authority | ... | who actually decides, e.g. "Linda Brandt, CFO — signs" | ... | ... |
+| Need | ... | ... | ... | ... |
+| Timeline | ... | ... | ... | ... |
+Status is exactly one word. Only mark an item Known when a call established
+it — a guess or a hint is Partial. When a later call corrects an item, update
+it and start the Detail with "Corrected <Mon D, YYYY> — previously ...".
 
 ## Summary
 ## People (name — role — stance)
@@ -230,23 +230,30 @@ NAV = [("/", "Prospects"), ("/opportunities", "Opportunities"), ("/calls", "Proc
 
 
 def call_bar() -> str:
-    """Buttons 1..n, one per sales call in order; green once processed into the current memory store."""
-    done = processed_calls()
-    return "".join(
-        f'<form method="post" action="/calls/{p.name}/process" class="inline">'
-        f'<button class="btn{" bg-green-600 border-green-600 text-white hover:bg-green-700" if p.name in done else ""}" '
-        f'data-size="sm" data-variant="{"primary" if p.name in done else "outline"}" '
-        f'title="{"Processed — run again: " if p.name in done else "Process "}{p.name}">{i}</button></form>'
-        for i, p in enumerate(sales_calls(), 1)
-    )
+    """Square buttons 1..n: green+check once processed, pink for the next one, plus 'Process call N'."""
+    calls, done = sales_calls(), processed_calls()
+    nxt = next((i for i, p in enumerate(calls, 1) if p.name not in done), None)
+    buttons = ""
+    for i, p in enumerate(calls, 1):
+        state = "done" if p.name in done else "next" if i == nxt else "todo"
+        label = ICON_CHECK if state == "done" else str(i)
+        tip = f"Call {i}: {p.name}" + (" — processed, click to run again" if state == "done" else "")
+        buttons += (f'<form method="post" action="/calls/{p.name}/process">'
+                    f'<button class="sm-call sm-call-{state}" title="{html.escape(tip)}" aria-label="{html.escape(tip)}">{label}</button></form>')
+    cta = (f'<form method="post" action="/calls/{calls[nxt - 1].name}/process">'
+           f'<button class="sm-btn-dark">{ICON_ARROW}Process call {nxt}</button></form>') if nxt else ""
+    return (f'<div class="sm-calls-meta"><span class="sm-label">CALLS</span>'
+            f'<span style="font-size:13px"><b style="font-weight:600">{len(done & {p.name for p in calls})}</b> of {len(calls)} processed</span></div>'
+            f'<div class="sm-call-list">{buttons}</div>{cta}')
 
 
-def page(title: str, body: str, active: str = "/", refresh: bool = False) -> HTMLResponse:
+def page(title: str, body: str, active: str = "/", refresh: bool = False, wide: bool = False) -> HTMLResponse:
     meta = '<meta http-equiv="refresh" content="4">' if refresh else ""
     nav = "".join(
-        f'<a href="{href}" class="btn" data-size="sm" data-variant="{"secondary" if href == active else "ghost"}">{label}</a>'
+        f'<a href="{href}" class="sm-tab"{" aria-current=page" if href == active else ""}>{label}</a>'
         for href, label in NAV
     )
+    width = "sm-wrap"
     return HTMLResponse(f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 {meta}<title>{html.escape(title)} · Sales Memory</title>
@@ -254,7 +261,57 @@ def page(title: str, body: str, active: str = "/", refresh: bool = False) -> HTM
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.11/dist/index.global.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/15.0.12/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
+  /* Design tokens from "Sales Memory — Opportunities" mock (stone palette, pink accent). */
+  :root{{--sm-bg:#fafaf9;--sm-fg:#0c0a09;--sm-muted:#57534e;--sm-subtle:#78716c;--sm-line:#e7e5e4;--sm-soft:#f5f5f4;
+         --sm-ok:#15803d;--sm-warn:#d97706;--sm-accent:#FF5C8F}}
+  body{{background:var(--sm-bg);color:var(--sm-fg);font-family:Inter,system-ui,sans-serif;font-size:14px;line-height:1.6;font-feature-settings:"tnum"}}
+  a:focus-visible,button:focus-visible{{outline:2px solid var(--sm-accent);outline-offset:2px}}
+  .sm-wrap{{max-width:1280px;margin:0 auto;padding:0 32px}} .sm-narrow{{max-width:1024px}}
+  .sm-bar{{background:#fff;border-bottom:1px solid var(--sm-line)}}
+  .sm-top{{min-height:64px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 40px}}
+  .sm-brand{{display:flex;align-items:baseline;gap:8px;text-decoration:none;color:var(--sm-fg)}}
+  .sm-brand b{{font-size:16px;font-weight:700;letter-spacing:-.01em}} .sm-brand span{{color:var(--sm-subtle)}}
+  .sm-nav{{display:flex;align-self:stretch;gap:4px}}
+  .sm-tab{{display:flex;align-items:center;padding:0 12px;font-weight:500;color:var(--sm-muted);text-decoration:none;border-bottom:2px solid transparent}}
+  .sm-tab:hover{{color:var(--sm-fg)}} .sm-tab[aria-current]{{font-weight:600;color:var(--sm-fg);border-bottom-color:var(--sm-accent)}}
+  .sm-calls{{padding-top:14px;padding-bottom:14px;display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px}}
+  .sm-calls-meta{{display:flex;flex-direction:column;gap:2px;min-width:150px}}
+  .sm-label{{font-size:11px;font-weight:600;letter-spacing:1.5px;color:var(--sm-subtle)}}
+  .sm-call-list{{display:flex;flex-wrap:wrap;gap:6px;flex:1 1 300px;min-width:0}}
+  .sm-call{{width:36px;height:36px;border-radius:6px;display:flex;align-items:center;justify-content:center;font:500 13px Inter,sans-serif;cursor:pointer;border:1px solid var(--sm-line);background:#fff;color:var(--sm-muted)}}
+  .sm-call-todo:hover{{border-color:var(--sm-muted)}}
+  .sm-call-done{{background:var(--sm-ok);border-color:var(--sm-ok);color:#fff}} .sm-call-done:hover{{background:#166534}}
+  .sm-call-next{{border:1.5px solid var(--sm-accent);background:#fff1f5;color:var(--sm-fg);font-weight:600}}
+  .sm-btn-dark{{height:36px;padding:0 14px;border-radius:6px;border:1px solid var(--sm-fg);background:var(--sm-fg);color:#fff;font:500 14px Inter,sans-serif;display:flex;align-items:center;gap:8px;cursor:pointer}}
+  .sm-btn-dark:hover{{background:#292524}}
+  .sm-btn-outline{{height:36px;padding:0 12px;border-radius:6px;border:1px solid var(--sm-line);background:#fff;font-weight:500;text-decoration:none;color:var(--sm-fg);display:flex;align-items:center;gap:6px}}
+  .sm-btn-outline:hover{{background:var(--sm-soft)}}
+  .sm-main{{padding-top:40px;padding-bottom:48px;display:flex;flex-direction:column;gap:24px}}
+  .sm-titlebar{{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}}
+  .sm-h1{{margin:0;font-size:30px;line-height:1.2;font-weight:700;letter-spacing:-.02em}} .sm-sub{{margin:0;color:var(--sm-muted)}}
+  .sm-legend{{display:flex;flex-wrap:wrap;gap:16px;font-size:13px;color:var(--sm-muted)}} .sm-legend>span{{display:flex;align-items:center;gap:6px}}
+  .sm-dot{{width:8px;height:8px;border-radius:999px;display:inline-block}}
+  .sm-card{{background:#fff;border:1px solid var(--sm-line);border-radius:8px;overflow:hidden}}
+  .sm-card-head{{padding:18px 20px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--sm-line)}}
+  .sm-who{{display:flex;align-items:center;gap:14px;min-width:0}}
+  .sm-avatar{{width:40px;height:40px;border-radius:8px;background:var(--sm-soft);border:1px solid var(--sm-line);display:flex;align-items:center;justify-content:center;font-weight:600;color:#44403c}}
+  .sm-name{{margin:0;font-size:18px;line-height:1.3;font-weight:600}}
+  .sm-progress{{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:13px;color:var(--sm-muted)}} .sm-progress b{{font-weight:600;color:var(--sm-fg)}}
+  .sm-segs{{display:flex;gap:3px}} .sm-seg{{width:18px;height:6px;border-radius:3px;background:var(--sm-line)}}
+  .sm-seg-known{{background:var(--sm-ok)}} .sm-seg-partial{{background:#f59e0b}}
+  .sm-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1px;background:var(--sm-line)}}
+  .sm-cell{{background:#fff;padding:18px 20px 20px;display:flex;flex-direction:column;gap:8px}}
+  .sm-cell-top{{display:flex;align-items:center;justify-content:space-between;gap:8px}}
+  .sm-pill{{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid}}
+  .sm-pill-ok{{background:#f0fdf4;border-color:#bbf7d0;color:var(--sm-ok)}} .sm-pill-partial{{background:#fffbeb;border-color:#fde68a;color:#b45309}}
+  .sm-pill-unknown{{background:var(--sm-soft);border-color:var(--sm-line);color:var(--sm-subtle)}}
+  .sm-head-lg{{font-size:20px;line-height:1.3;font-weight:600;letter-spacing:-.01em}} .sm-head{{font-size:16px;line-height:1.4;font-weight:600}}
+  .sm-detail{{margin:0;font-size:13px;color:var(--sm-muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}}
+  .sm-head-lg,.sm-head{{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
+  @media (max-width:640px){{.sm-wrap{{padding:0 16px}}}}
   @layer base{{*,::before,::after{{border-color:var(--border)}}}}
   .md h1{{font-size:1.5rem;font-weight:600;letter-spacing:-.01em;margin:0 0 .5rem}}
   .md h2{{font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted-foreground);margin:2rem 0 .6rem}}
@@ -262,17 +319,16 @@ def page(title: str, body: str, active: str = "/", refresh: bool = False) -> HTM
   .md ul{{list-style:disc;padding-left:1.25rem;margin:.5rem 0}} .md ol{{list-style:decimal;padding-left:1.25rem}}
   .md li{{margin:.3rem 0;line-height:1.55}} .md code{{background:var(--muted);padding:0 .3rem;border-radius:.25rem;font-size:.85em}}
   .md blockquote{{border-left:3px solid var(--border);padding-left:.75rem;color:var(--muted-foreground)}}
+  .md td,.md th{{white-space:normal;vertical-align:top}}
   .md .table-wrap{{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);margin:.5rem 0}}
 </style></head>
-<body class="min-h-screen bg-muted/40">
-<header class="border-b bg-background">
-  <div class="max-w-5xl mx-auto px-4 h-14 flex items-center gap-4">
-    <a href="/" class="font-semibold tracking-tight mr-2">Scope Creepers <span class="text-muted-foreground font-normal">· Sales Memory</span></a>
-    <nav class="flex gap-1">{nav}</nav>
-  </div>
-  <div class="border-t bg-muted/30"><div class="max-w-5xl mx-auto px-4 py-2 flex flex-wrap items-center gap-1.5"><span class="text-xs text-muted-foreground mr-1">Calls</span>{call_bar()}</div></div>
-</header>
-<main class="max-w-5xl mx-auto px-4 py-8">{body}</main>
+<body class="min-h-screen">
+<header class="sm-bar"><div class="sm-wrap sm-top">
+  <a href="/" class="sm-brand"><b>Scope Creepers</b><span>Sales Memory</span></a>
+  <nav class="sm-nav" aria-label="Primary">{nav}</nav>
+</div></header>
+<section class="sm-bar" aria-label="Calls"><div class="sm-wrap sm-calls">{call_bar()}</div></section>
+<main class="{width} {"sm-main" if wide else ""}" style="{"" if wide else "padding-top:32px;padding-bottom:48px"}">{body}</main>
 <script>
   const STATUS = {{known: "", partial: "secondary", unknown: "outline"}};
   document.querySelectorAll('.md').forEach(el => {{
@@ -310,12 +366,18 @@ BADGE = {"known": "", "partial": "secondary"}
 
 
 def bant(content: str) -> dict[str, tuple[str, str, str]]:
-    """item -> (status, what we know, correction note), from the BANT table rows: '| Budget | Known | ... | source |'."""
+    """item -> (status, headline, detail) from rows '| Budget | Known | headline | detail | source |'."""
     out = {}
     for item in BANT:
         cells = [c.strip() for c in first_line(content.replace("**", ""), f"| {item} |").split("|")]
-        status, _, extra = cells[2].partition(" ") if len(cells) > 3 else ("unknown", "", "")
-        out[item] = (status.lower(), cells[3] if len(cells) > 3 else "", extra.strip(" ()"))
+        if len(cells) < 5:
+            out[item] = ("unknown", "", "")
+            continue
+        status = (cells[2].split() or ["unknown"])[0].lower()
+        if len(cells) >= 7:  # | item | status | headline | detail | source |
+            out[item] = (status, cells[3], cells[4])
+        else:  # older | item | status | what we know | source |
+            out[item] = (status, cells[3][:70], cells[3])
     return out
 
 
@@ -325,28 +387,55 @@ def bant_badges(content: str) -> str:
     return f'<div class="flex flex-wrap gap-1.5">{"".join(out)}</div>'
 
 
+ICON_CHECK = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+ICON_INFO = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16h.01"/></svg>'
+ICON_CHEVRON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>'
+ICON_ARROW = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M12 5l7 7-7 7"/></svg>'
+
+PILL = {
+    "known": ("sm-pill-ok", ICON_CHECK, "Confirmed"),
+    "partial": ("sm-pill-partial", ICON_INFO, "Partial"),
+}
+
+
+def initials(name: str) -> str:
+    words = [w for w in re.findall(r"[A-Za-z]+", name) if w.lower() not in {"llp", "inc", "and", "the"}]
+    return "".join(w[0] for w in words[:2]).upper() or "?"
+
+
+def opportunity_card(slug: str, content: str) -> str:
+    name = first_line(content, "# ").lstrip("# ") or slug
+    b = bant(content)
+    confirmed = [k for k, (s, _, _) in b.items() if s == "known"]
+    open_items = [k.lower() for k in BANT if k not in confirmed]
+    segs = "".join(f'<span class="sm-seg sm-seg-{s}"></span>' for s, _, _ in b.values())
+    summary = f'<b>{len(confirmed)} of 4</b> confirmed' + (f' · {", ".join(open_items)} open' if open_items else "")
+    cells = ""
+    for item, (status, headline, detail) in b.items():
+        cls, icon, label = PILL.get(status, ("sm-pill-unknown", "", "Unknown"))
+        size = "sm-head-lg" if item == "Budget" else "sm-head"
+        cells += (f'<div class="sm-cell"><div class="sm-cell-top"><span class="sm-label">{item.upper()}</span>'
+                  f'<span class="sm-pill {cls}">{icon}{label}</span></div>'
+                  f'<div class="{size}" title="{html.escape(headline)}">{html.escape(headline) or "—"}</div>'
+                  + (f'<p class="sm-detail" title="{html.escape(detail)}">{html.escape(detail)}</p>' if detail and detail != headline else "")
+                  + '</div>')
+    return (f'<article class="sm-card"><header class="sm-card-head"><div class="sm-who">'
+            f'<div class="sm-avatar" aria-hidden="true">{html.escape(initials(name))}</div>'
+            f'<div><h2 class="sm-name">{html.escape(name)}</h2>'
+            f'<div class="sm-progress"><span class="sm-segs" aria-hidden="true">{segs}</span><span>{summary}</span></div></div></div>'
+            f'<a class="sm-btn-outline" href="/prospects/{slug}">View prospect{ICON_CHEVRON}</a></header>'
+            f'<div class="sm-grid">{cells}</div></article>')
+
+
 @app.get("/opportunities", response_class=HTMLResponse)
 def opportunities():
-    rows = ""
-    for slug, c in prospects().items():
-        cells = ""
-        for item, (status, what, extra) in bant(c).items():
-            # ponytail: only "known" ticks the box; "partial" shows as a muted label next to an empty box.
-            box = f'<input type="checkbox" class="input mt-0.5" disabled {"checked" if status == "known" else ""} aria-label="{item} {status}">'
-            note = " · ".join(x for x in ("" if status == "known" else status, extra) if x)
-            note = f'<div class="text-xs text-muted-foreground mt-1 whitespace-normal">{html.escape(note)}</div>' if note else ""
-            cells += (f'<td class="align-top"><div class="flex items-start gap-2">{box}<div class="min-w-0">'
-                      f'<div class="text-sm line-clamp-3 whitespace-normal" title="{html.escape(what)}">{html.escape(what) or "—"}</div>{note}</div></div></td>')
-        name = first_line(c, "# ").lstrip("# ") or slug
-        rows += (f'<tr><td class="align-top font-medium whitespace-normal"><a class="underline-offset-4 hover:underline" '
-                 f'href="/prospects/{slug}">{html.escape(name)}</a></td>{cells}</tr>')
-    body = rows or '<tr><td colspan="5" class="text-sm text-muted-foreground">No prospects yet — process some calls.</td></tr>'
-    return page("Opportunities",
-                '<div class="mb-6"><h1 class="text-2xl font-semibold tracking-tight">Opportunities</h1>'
-                '<p class="text-muted-foreground text-sm">BANT per prospect. A ticked box means a call established it.</p></div>'
-                '<div class="card p-0 overflow-x-auto"><table class="table table-fixed w-full"><thead><tr><th class="w-40">Client</th>'
-                + "".join(f'<th>{b}</th>' for b in BANT)
-                + f'</tr></thead><tbody>{body}</tbody></table></div>', active="/opportunities")
+    cards = "".join(opportunity_card(slug, c) for slug, c in prospects().items())
+    head = ('<div class="sm-titlebar"><div><h1 class="sm-h1">Opportunities</h1>'
+            '<p class="sm-sub">BANT per prospect, built up from processed calls.</p></div>'
+            '<div class="sm-legend"><span><span class="sm-dot" style="background:#15803d"></span>Confirmed on a call</span>'
+            '<span><span class="sm-dot" style="background:#d97706"></span>Partial</span></div></div>')
+    empty = '<div class="sm-card" style="padding:20px">No prospects yet. Process call 1 to start.</div>'
+    return page("Opportunities", head + (cards or empty), active="/opportunities", wide=True)
 
 
 @app.get("/", response_class=HTMLResponse)
