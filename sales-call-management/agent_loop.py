@@ -11,6 +11,8 @@ whether they stream (`stream_cb`); the loop logic is identical, so it lives in
 one place.
 """
 
+import json
+
 import anthropic
 
 import tools as tools_module
@@ -18,6 +20,7 @@ import tools as tools_module
 MODEL = "claude-opus-5-5"
 MAX_TOKENS_STREAM = 64000
 MAX_TOKENS = 16000
+MAX_ITERATIONS = 12
 
 
 def run_loop(
@@ -98,11 +101,85 @@ def run_loop(
     str
         The final assistant text once the model stops with `end_turn`.
     """
-    raise NotImplementedError(
-        "Implement the manual Anthropic Messages tool-use loop per the docstring "
-        "contract: construct anthropic.Anthropic(), filter tools_module.TOOL_SCHEMAS "
-        "to allowed_tools, loop over client.messages.create / .stream with adaptive "
-        "thinking (no budget_tokens), execute every tool_use block via "
-        "tools_module.dispatch, return all tool_result blocks in one user message, "
-        "guard max_tokens and refusal stop reasons, and return the final end_turn text."
+    client = anthropic.Anthropic()
+
+    # Do not mutate the caller's list; work on a shallow copy.
+    working = list(messages)
+
+    tools = [t for t in tools_module.TOOL_SCHEMAS if t["name"] in allowed_tools]
+
+    response = None
+
+    for _ in range(MAX_ITERATIONS):
+        if stream_cb is not None:
+            with client.messages.stream(
+                model=MODEL,
+                max_tokens=MAX_TOKENS_STREAM,
+                system=system,
+                tools=tools,
+                thinking={"type": "adaptive"},
+                messages=working,
+            ) as stream:
+                for event in stream:
+                    if event.type == "text":
+                        stream_cb(event.text)
+            response = stream.get_final_message()
+        else:
+            response = client.messages.create(
+                model=MODEL,
+                max_tokens=MAX_TOKENS,
+                system=system,
+                tools=tools,
+                thinking={"type": "adaptive"},
+                messages=working,
+            )
+
+        # Preserve the full assistant turn (thinking + tool_use blocks) so the
+        # tool round-trip stays valid.
+        working.append({"role": "assistant", "content": response.content})
+
+        stop_reason = response.stop_reason
+
+        if stop_reason == "refusal":
+            category = None
+            stop_details = getattr(response, "stop_details", None)
+            if stop_details is not None:
+                category = getattr(stop_details, "category", None)
+            if category is not None:
+                return f"Model refused to respond (category: {category})."
+            return "Model refused to respond."
+
+        if stop_reason == "max_tokens":
+            break
+
+        if stop_reason == "tool_use":
+            tool_results = []
+            for block in response.content:
+                if getattr(block, "type", None) != "tool_use":
+                    continue
+                result_block = {
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                }
+                try:
+                    result = tools_module.dispatch(block.name, block.input)
+                    result_block["content"] = json.dumps(result)
+                except Exception as exc:  # noqa: BLE001
+                    result_block["is_error"] = True
+                    result_block["content"] = str(exc)
+                tool_results.append(result_block)
+            # All tool_result blocks go back in a SINGLE user message.
+            working.append({"role": "user", "content": tool_results})
+            continue
+
+        # end_turn or any other terminal stop reason.
+        break
+
+    if response is None:
+        return ""
+
+    return "".join(
+        block.text
+        for block in response.content
+        if getattr(block, "type", None) == "text"
     )
