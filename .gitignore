@@ -6,5 +6,10 @@
 outputs/
 .sales_agent_id
 .sales_memory_store_id
-__pycache__/
 .processed_calls.json
+__pycache__/
+*.pyc
+sales-call-management/data/crm.json
+.bant_agent_id
+.bant_environment_id
+.bant_memory_store_id

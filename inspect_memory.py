@@ -21,9 +21,14 @@ def main() -> None:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise SystemExit("Set ANTHROPIC_API_KEY before running.")
 
-    store_id_path = Path(".memory_store_id")
+    # --sales inspects the Sales CRM store made by create_sales_agent.py
+    sales = "--sales" in sys.argv
+    store_id_path = Path(".bant_memory_store_id" if sales else ".memory_store_id")
     if not store_id_path.exists():
-        raise SystemExit("Missing .memory_store_id. Run create_agent.py first.")
+        raise SystemExit(
+            f"Missing {store_id_path}. Run "
+            f"{'create_sales_agent.py' if sales else 'create_agent.py'} first."
+        )
     store_id = store_id_path.read_text().strip()
 
     full = "--full" in sys.argv

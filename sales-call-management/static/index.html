@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sales Call Management</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Sales Call Management</h1>
+    <div class="call-controls">
+      <label for="call-select">Transcript</label>
+      <select id="call-select"></select>
+      <button id="ingest-button" type="button">Ingest call</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="pane dashboard-pane" aria-labelledby="dashboard-heading">
+      <h2 id="dashboard-heading">Sales Dashboard</h2>
+
+      <div class="region" aria-labelledby="stat-tiles-heading">
+        <h3 id="stat-tiles-heading" class="region-title">Overview</h3>
+        <div id="stat-tiles" class="stat-tiles"></div>
+      </div>
+
+      <div class="region" aria-labelledby="pipeline-heading">
+        <h3 id="pipeline-heading" class="region-title">Pipeline by stage</h3>
+        <div id="pipeline-by-stage" class="pipeline-by-stage"></div>
+      </div>
+
+      <div class="region" aria-labelledby="activity-heading">
+        <h3 id="activity-heading" class="region-title">Recent activity</h3>
+        <div id="recent-activity" class="recent-activity"></div>
+      </div>
+
+      <div class="region" aria-labelledby="opps-heading">
+        <h3 id="opps-heading" class="region-title">Open opportunities</h3>
+        <table id="open-opportunities" class="open-opportunities">
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="pane chat-pane" aria-labelledby="chat-heading">
+      <h2 id="chat-heading">Reporting Assistant</h2>
+      <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+      <form id="chat-form" class="chat-form">
+        <input
+          id="chat-input"
+          class="chat-input"
+          type="text"
+          autocomplete="off"
+          placeholder="Ask about the pipeline..."
+        />
+        <button id="chat-send" type="submit">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
