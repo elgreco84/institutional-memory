@@ -30,6 +30,8 @@ load_dotenv()
 CALLS_DIR = Path("synthetic-data/sales-calls")
 CATEGORY = "**Category:** sales-discovery"
 
+SALES_MODEL = "claude-haiku-5-5"  # fast; "claude-sonnet-4-6" picks up more nuance but ~2x slower
+
 SALES_SYSTEM_PROMPT = """\
 You are the Sales Memory Agent for Scope Creepers, an AI consultancy that sells
 Claude/LLM implementations, app modernization, process automation and
@@ -102,14 +104,14 @@ def ids() -> tuple[str, str]:
 def _ids() -> tuple[str, str]:
     agent_path, store_path = Path(".sales_agent_id"), Path(".sales_memory_store_id")
     client = Anthropic()
-    # The id file holds "<agent_id> <prompt fingerprint>"; a changed prompt gets a fresh agent,
-    # since an agent's system prompt is fixed when it's created.
-    fingerprint = hashlib.sha256(SALES_SYSTEM_PROMPT.encode()).hexdigest()[:12]
+    # The id file holds "<agent_id> <fingerprint>"; a changed model or prompt gets a fresh agent,
+    # since both are fixed when an agent is created.
+    fingerprint = hashlib.sha256((SALES_MODEL + SALES_SYSTEM_PROMPT).encode()).hexdigest()[:12]
     saved = agent_path.read_text().split() if agent_path.exists() else []
     if saved[1:] != [fingerprint]:
         agent = client.beta.agents.create(
             name="Sales Memory Agent",
-            model="claude-sonnet-4-6",  # same model as create_agent.py
+            model=SALES_MODEL,
             system=SALES_SYSTEM_PROMPT,
             tools=[{"type": "agent_toolset_20260401"}],
             metadata={"hackathon": "partner-basecamp-2026", "track": "sales-memory"},
