@@ -75,6 +75,15 @@ transcript timestamp.
 When a new call contradicts the file, UPDATE it (don't append) and note the
 date of the change. Do not copy transcripts into memory.
 
+# Speed (important — the seller is waiting)
+
+- Keep the file tight: at most ~5 bullets per section, one line each, and
+  under ~6,000 characters overall. Prefer numbers and names over prose.
+- Save with exactly ONE write of the whole file per session (new or
+  existing prospect). Do not make multiple edits — each tool call is a slow
+  round trip. Carry forward everything still true from the old file.
+- Don't re-read a file you just wrote. Don't explore other prospects' files.
+
 # How to answer
 
 Be concise and specific. Cite timestamps when you rely on a call.
@@ -408,8 +417,8 @@ def process(name: str):
         raise HTTPException(404, "Unknown transcript")
     job = start_job(f"Processing {name}", "/", f"Process — {name}",
                     "Below is a discovery-call transcript. Check your memory first, then create or UPDATE "
-                    "the prospect's file in prospects/ following your protocol. Reply with a short summary "
-                    f"of what you saved or changed.\n\n===== TRANSCRIPT: {name} =====\n{path.read_text()}",
+                    "the prospect's file in prospects/ following your protocol. Then reply with at most 5 "
+                    f"short bullets: what changed in BANT and anything corrected.\n\n===== TRANSCRIPT: {name} =====\n{path.read_text()}",
                     on_done=lambda: mark_processed(name))
     return RedirectResponse(f"/jobs/{job}", status_code=303)
 
