@@ -298,18 +298,19 @@ BANT = ("Budget", "Authority", "Need", "Timeline")
 BADGE = {"known": "", "partial": "secondary"}
 
 
-def bant(content: str) -> dict[str, tuple[str, str]]:
-    """item -> (status, what we know), from the BANT table rows: '| Budget | Known | ... | source |'."""
+def bant(content: str) -> dict[str, tuple[str, str, str]]:
+    """item -> (status, what we know, correction note), from the BANT table rows: '| Budget | Known | ... | source |'."""
     out = {}
     for item in BANT:
         cells = [c.strip() for c in first_line(content.replace("**", ""), f"| {item} |").split("|")]
-        out[item] = (cells[2].lower(), cells[3]) if len(cells) > 3 else ("unknown", "")
+        status, _, extra = cells[2].partition(" ") if len(cells) > 3 else ("unknown", "", "")
+        out[item] = (status.lower(), cells[3] if len(cells) > 3 else "", extra.strip(" ()"))
     return out
 
 
 def bant_badges(content: str) -> str:
     out = [f'<span class="badge" data-variant="{BADGE.get(s, "outline")}" title="{item}: {s}">{item}</span>'
-           for item, (s, _) in bant(content).items()]
+           for item, (s, _, _) in bant(content).items()]
     return f'<div class="flex flex-wrap gap-1.5">{"".join(out)}</div>'
 
 
@@ -318,21 +319,22 @@ def opportunities():
     rows = ""
     for slug, c in prospects().items():
         cells = ""
-        for item, (status, what) in bant(c).items():
+        for item, (status, what, extra) in bant(c).items():
             # ponytail: only "known" ticks the box; "partial" shows as a muted label next to an empty box.
             box = f'<input type="checkbox" class="input mt-0.5" disabled {"checked" if status == "known" else ""} aria-label="{item} {status}">'
-            note = "" if status == "known" else f'<div class="text-xs text-muted-foreground">{html.escape(status)}</div>'
+            note = " · ".join(x for x in ("" if status == "known" else status, extra) if x)
+            note = f'<div class="text-xs text-muted-foreground mt-1 whitespace-normal">{html.escape(note)}</div>' if note else ""
             cells += (f'<td class="align-top"><div class="flex items-start gap-2">{box}<div class="min-w-0">'
                       f'<div class="text-sm line-clamp-3 whitespace-normal" title="{html.escape(what)}">{html.escape(what) or "—"}</div>{note}</div></div></td>')
         name = first_line(c, "# ").lstrip("# ") or slug
-        rows += (f'<tr><td class="align-top font-medium"><a class="underline-offset-4 hover:underline" '
+        rows += (f'<tr><td class="align-top font-medium whitespace-normal"><a class="underline-offset-4 hover:underline" '
                  f'href="/prospects/{slug}">{html.escape(name)}</a></td>{cells}</tr>')
     body = rows or '<tr><td colspan="5" class="text-sm text-muted-foreground">No prospects yet — process some calls.</td></tr>'
     return page("Opportunities",
                 '<div class="mb-6"><h1 class="text-2xl font-semibold tracking-tight">Opportunities</h1>'
                 '<p class="text-muted-foreground text-sm">BANT per prospect. A ticked box means a call established it.</p></div>'
-                '<div class="card p-0 overflow-x-auto"><table class="table"><thead><tr><th>Client</th>'
-                + "".join(f'<th class="min-w-48">{b}</th>' for b in BANT)
+                '<div class="card p-0 overflow-x-auto"><table class="table table-fixed w-full"><thead><tr><th class="w-40">Client</th>'
+                + "".join(f'<th>{b}</th>' for b in BANT)
                 + f'</tr></thead><tbody>{body}</tbody></table></div>', active="/opportunities")
 
 
