@@ -7,3 +7,4 @@ outputs/
 .sales_agent_id
 .sales_memory_store_id
 __pycache__/
+.processed_calls.json

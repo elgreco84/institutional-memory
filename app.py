@@ -12,7 +12,10 @@ Usage:
     .venv/bin/uvicorn app:app --reload    # then open http://127.0.0.1:8000
 """
 
+import hashlib
 import html
+import json
+import re
 import threading
 import uuid
 from pathlib import Path
@@ -90,7 +93,11 @@ def ids() -> tuple[str, str]:
 def _ids() -> tuple[str, str]:
     agent_path, store_path = Path(".sales_agent_id"), Path(".sales_memory_store_id")
     client = Anthropic()
-    if not agent_path.exists():
+    # The id file holds "<agent_id> <prompt fingerprint>"; a changed prompt gets a fresh agent,
+    # since an agent's system prompt is fixed when it's created.
+    fingerprint = hashlib.sha256(SALES_SYSTEM_PROMPT.encode()).hexdigest()[:12]
+    saved = agent_path.read_text().split() if agent_path.exists() else []
+    if saved[1:] != [fingerprint]:
         agent = client.beta.agents.create(
             name="Sales Memory Agent",
             model="claude-sonnet-4-6",  # same model as create_agent.py
@@ -98,7 +105,7 @@ def _ids() -> tuple[str, str]:
             tools=[{"type": "agent_toolset_20260401"}],
             metadata={"hackathon": "partner-basecamp-2026", "track": "sales-memory"},
         )
-        agent_path.write_text(agent.id)
+        agent_path.write_text(f"{agent.id} {fingerprint}")
     if not store_path.exists():
         store = client.beta.memory_stores.create(
             name="Sales Memory",
@@ -109,7 +116,7 @@ def _ids() -> tuple[str, str]:
             ),
         )
         store_path.write_text(store.id)
-    return agent_path.read_text().strip(), store_path.read_text().strip()
+    return agent_path.read_text().split()[0], store_path.read_text().strip()
 
 
 def run_agent(title: str, message: str) -> str:
@@ -163,13 +170,15 @@ def prospects() -> dict[str, str]:
 JOBS: dict[str, dict] = {}
 
 
-def start_job(label: str, back: str, title: str, message: str) -> str:
+def start_job(label: str, back: str, title: str, message: str, on_done=None) -> str:
     job_id = uuid.uuid4().hex[:8]
     JOBS[job_id] = {"label": label, "back": back, "status": "running", "result": ""}
 
     def work() -> None:
         try:
             JOBS[job_id].update(status="done", result=run_agent(title, message))
+            if on_done:
+                on_done()
         except Exception as e:  # surface API/setup errors on the job page
             JOBS[job_id].update(status="error", result=f"{type(e).__name__}: {e}")
 
@@ -177,12 +186,48 @@ def start_job(label: str, back: str, title: str, message: str) -> str:
     return job_id
 
 
+# Which calls have been processed, per memory store, so a fresh store starts all-grey.
+PROCESSED_PATH = Path(".processed_calls.json")
+_processed_lock = threading.Lock()
+
+
+def processed_calls() -> set[str]:
+    _, store_id = ids()
+    try:
+        return set(json.loads(PROCESSED_PATH.read_text()).get(store_id, []))
+    except (FileNotFoundError, ValueError):
+        return set()
+
+
+def mark_processed(name: str) -> None:
+    _, store_id = ids()
+    with _processed_lock:
+        try:
+            data = json.loads(PROCESSED_PATH.read_text())
+        except (FileNotFoundError, ValueError):
+            data = {}
+        data[store_id] = sorted(set(data.get(store_id, [])) | {name})
+        PROCESSED_PATH.write_text(json.dumps(data, indent=2))
+
+
 # ---------------------------------------------------------------- web
 # UI: Basecoat (shadcn look, plain HTML classes) + Tailwind v4 browser build, both from CDN.
 
 app = FastAPI()
 
-NAV = [("/", "Prospects"), ("/calls", "Process calls")]
+NAV = [("/", "Prospects"), ("/opportunities", "Opportunities"), ("/calls", "Process calls")]
+
+
+def call_bar() -> str:
+    """Buttons 1..n, one per sales call in order; green once processed into the current memory store."""
+    done = processed_calls()
+    return "".join(
+        f'<form method="post" action="/calls/{p.name}/process" class="inline">'
+        f'<button class="btn{" bg-green-600 border-green-600 text-white hover:bg-green-700" if p.name in done else ""}" '
+        f'data-size="sm" data-variant="{"primary" if p.name in done else "outline"}" '
+        f'title="{"Processed — run again: " if p.name in done else "Process "}{p.name}">{i}</button></form>'
+        for i, p in enumerate(sales_calls(), 1)
+    )
 
 
 def page(title: str, body: str, active: str = "/", refresh: bool = False) -> HTMLResponse:
@@ -214,6 +259,7 @@ def page(title: str, body: str, active: str = "/", refresh: bool = False) -> HTM
     <a href="/" class="font-semibold tracking-tight mr-2">Scope Creepers <span class="text-muted-foreground font-normal">· Sales Memory</span></a>
     <nav class="flex gap-1">{nav}</nav>
   </div>
+  <div class="border-t bg-muted/30"><div class="max-w-5xl mx-auto px-4 py-2 flex flex-wrap items-center gap-1.5"><span class="text-xs text-muted-foreground mr-1">Calls</span>{call_bar()}</div></div>
 </header>
 <main class="max-w-5xl mx-auto px-4 py-8">{body}</main>
 <script>
@@ -252,14 +298,42 @@ BANT = ("Budget", "Authority", "Need", "Timeline")
 BADGE = {"known": "", "partial": "secondary"}
 
 
-def bant_badges(content: str) -> str:
-    """Read Status from the BANT table rows ('| Budget | Known | ...') into small badges."""
-    out = []
+def bant(content: str) -> dict[str, tuple[str, str]]:
+    """item -> (status, what we know), from the BANT table rows: '| Budget | Known | ... | source |'."""
+    out = {}
     for item in BANT:
-        row = first_line(content.replace("**", ""), f"| {item} |")
-        status = row.split("|")[2].strip().lower() if row.count("|") > 2 else "unknown"
-        out.append(f'<span class="badge" data-variant="{BADGE.get(status, "outline")}" title="{item}: {status}">{item}</span>')
+        cells = [c.strip() for c in first_line(content.replace("**", ""), f"| {item} |").split("|")]
+        out[item] = (cells[2].lower(), cells[3]) if len(cells) > 3 else ("unknown", "")
+    return out
+
+
+def bant_badges(content: str) -> str:
+    out = [f'<span class="badge" data-variant="{BADGE.get(s, "outline")}" title="{item}: {s}">{item}</span>'
+           for item, (s, _) in bant(content).items()]
     return f'<div class="flex flex-wrap gap-1.5">{"".join(out)}</div>'
+
+
+@app.get("/opportunities", response_class=HTMLResponse)
+def opportunities():
+    rows = ""
+    for slug, c in prospects().items():
+        cells = ""
+        for item, (status, what) in bant(c).items():
+            # ponytail: only "known" ticks the box; "partial" shows as a muted label next to an empty box.
+            box = f'<input type="checkbox" class="input mt-0.5" disabled {"checked" if status == "known" else ""} aria-label="{item} {status}">'
+            note = "" if status == "known" else f'<div class="text-xs text-muted-foreground">{html.escape(status)}</div>'
+            cells += (f'<td class="align-top"><div class="flex items-start gap-2">{box}<div class="min-w-0">'
+                      f'<div class="text-sm line-clamp-3 whitespace-normal" title="{html.escape(what)}">{html.escape(what) or "—"}</div>{note}</div></div></td>')
+        name = first_line(c, "# ").lstrip("# ") or slug
+        rows += (f'<tr><td class="align-top font-medium"><a class="underline-offset-4 hover:underline" '
+                 f'href="/prospects/{slug}">{html.escape(name)}</a></td>{cells}</tr>')
+    body = rows or '<tr><td colspan="5" class="text-sm text-muted-foreground">No prospects yet — process some calls.</td></tr>'
+    return page("Opportunities",
+                '<div class="mb-6"><h1 class="text-2xl font-semibold tracking-tight">Opportunities</h1>'
+                '<p class="text-muted-foreground text-sm">BANT per prospect. A ticked box means a call established it.</p></div>'
+                '<div class="card p-0 overflow-x-auto"><table class="table"><thead><tr><th>Client</th>'
+                + "".join(f'<th class="min-w-48">{b}</th>' for b in BANT)
+                + f'</tr></thead><tbody>{body}</tbody></table></div>', active="/opportunities")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -333,7 +407,8 @@ def process(name: str):
     job = start_job(f"Processing {name}", "/", f"Process — {name}",
                     "Below is a discovery-call transcript. Check your memory first, then create or UPDATE "
                     "the prospect's file in prospects/ following your protocol. Reply with a short summary "
-                    f"of what you saved or changed.\n\n===== TRANSCRIPT: {name} =====\n{path.read_text()}")
+                    f"of what you saved or changed.\n\n===== TRANSCRIPT: {name} =====\n{path.read_text()}",
+                    on_done=lambda: mark_processed(name))
     return RedirectResponse(f"/jobs/{job}", status_code=303)
 
 
