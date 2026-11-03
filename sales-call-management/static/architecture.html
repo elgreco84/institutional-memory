@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture · Sales Call Management — Scope Creepers</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --ink:#e2e8f0; --muted:#94a3b8;
+    --line:#334155; --card:#f8fafc; --cardink:#0f172a;
+    --indigo:#6366f1; --indigo-soft:#eef2ff;
+    --teal:#14b8a6; --teal-soft:#ecfeff;
+    --slate:#64748b; --amber:#f59e0b;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:radial-gradient(1200px 600px at 20% -10%, #1e293b 0%, var(--bg) 55%);
+    color:var(--ink); font:16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
+    min-height:100vh; padding:28px 32px 48px;
+  }
+  header{max-width:1320px; margin:0 auto 18px}
+  .eyebrow{color:var(--indigo); font-weight:700; letter-spacing:.14em; text-transform:uppercase; font-size:12px}
+  h1{margin:.2rem 0 .3rem; font-size:28px; letter-spacing:-.02em}
+  h1 .team{color:var(--muted); font-weight:500}
+  .sub{color:var(--muted); max-width:860px; margin:0}
+  .legend{display:flex; flex-wrap:wrap; gap:18px 26px; margin:16px 0 4px; align-items:center}
+  .legend .item{display:flex; align-items:center; gap:9px; font-size:13.5px; color:var(--ink)}
+  .legend .swatch{width:26px; height:0; border-top:3px solid var(--slate); border-radius:3px}
+  .legend .swatch.indigo{border-color:var(--indigo)}
+  .legend .swatch.teal{border-color:var(--teal)}
+  .legend .swatch.dash{border-top-style:dashed}
+  .legend .pill{font-size:11.5px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:2px 10px}
+  .frame{max-width:1320px; margin:0 auto; background:rgba(148,163,184,.04);
+    border:1px solid var(--line); border-radius:18px; padding:10px; box-shadow:0 24px 60px -30px #000}
+  svg{display:block; width:100%; height:auto}
+  .flows{max-width:1320px; margin:22px auto 0; display:grid; gap:16px; grid-template-columns:repeat(3,1fr)}
+  @media(max-width:860px){.flows{grid-template-columns:1fr}}
+  .flowcard{background:var(--panel); border:1px solid var(--line); border-left-width:4px; border-radius:12px; padding:14px 16px}
+  .flowcard.ingest{border-left-color:var(--indigo)}
+  .flowcard.report{border-left-color:var(--teal)}
+  .flowcard.dash{border-left-color:var(--slate)}
+  .flowcard h3{margin:0 0 6px; font-size:15px}
+  .flowcard p{margin:0; color:var(--muted); font-size:13px}
+  .flowcard code{background:#0b1220; color:#cbd5e1; padding:1px 6px; border-radius:5px; font-size:12px}
+  footer{max-width:1320px; margin:20px auto 0; color:var(--muted); font-size:12.5px}
+</style>
+</head>
+<body>
+<header>
+  <div class="eyebrow">Scope Creepers · Partner Basecamp</div>
+  <h1>Sales Call Management <span class="team">— system architecture</span></h1>
+  <p class="sub">A recorded sales call arrives as a transcript. The <strong>Discovery Agent</strong> reads it and updates a
+  JSON CRM; the <strong>Reporting Agent</strong> answers questions live from that same CRM. Both agents run a local
+  Messages-API tool loop against <code style="color:#c7d2fe">claude-opus-5-5</code> — no cloud agent runtime.</p>
+  <div class="legend">
+    <span class="item"><span class="swatch indigo"></span>Ingest / write path</span>
+    <span class="item"><span class="swatch teal"></span>Reporting / read path</span>
+    <span class="item"><span class="swatch"></span>Dashboard &amp; shared infra</span>
+    <span class="item"><span class="swatch dash"></span>Response / stream back</span>
+    <span class="pill">JSON file stands in for a CRM</span>
+    <span class="pill">.md files stand in for a vector DB</span>
+  </div>
+</header>
+
+<div class="frame">
+<svg viewBox="0 0 1320 760" role="img" aria-label="Architecture diagram of the Sales Call Management system">
+  <defs>
+    <marker id="ar-slate" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/></marker>
+    <marker id="ar-indigo" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#6366f1"/></marker>
+    <marker id="ar-teal" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#14b8a6"/></marker>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <style>
+      .box{fill:#f8fafc; stroke:#cbd5e1; stroke-width:1.5; rx:12; filter:url(#shadow)}
+      .box.indigo{stroke:#6366f1}
+      .box.teal{stroke:#14b8a6}
+      .box.data{fill:#fffbeb; stroke:#f59e0b}
+      .box.api{fill:#eef2ff; stroke:#6366f1}
+      .container{fill:rgba(148,163,184,.06); stroke:#475569; stroke-width:1.5; stroke-dasharray:4 4}
+      .t-title{fill:#0f172a; font:700 15px ui-sans-serif,system-ui,Arial}
+      .t-sub{fill:#475569; font:12px ui-sans-serif,system-ui,Arial}
+      .t-chip{fill:#0f172a; font:600 12.5px ui-mono,ui-monospace,Menlo,Consolas,monospace}
+      .t-group{fill:#cbd5e1; font:700 12px ui-sans-serif,system-ui,Arial; letter-spacing:.12em}
+      .t-edge{fill:#cbd5e1; font:11.5px ui-sans-serif,system-ui,Arial}
+      .t-edge-m{fill:#94a3b8; font:11px ui-mono,ui-monospace,Menlo,monospace}
+      .edge{fill:none; stroke-width:2}
+      .edge.slate{stroke:#64748b}
+      .edge.indigo{stroke:#6366f1}
+      .edge.teal{stroke:#14b8a6}
+      .edge.dash{stroke-dasharray:5 5}
+      .chip{fill:#eef2ff; stroke:#c7d2fe; stroke-width:1; rx:7}
+      .chip.rd{fill:#ecfeff; stroke:#a5f3fc}
+    </style>
+  </defs>
+
+  <!-- group labels -->
+  <text class="t-group" x="40" y="30">PRESENTATION</text>
+  <text class="t-group" x="300" y="30">API LAYER</text>
+  <text class="t-group" x="585" y="30">AGENTS &amp; RUNTIME</text>
+  <text class="t-group" x="885" y="30">MODEL &amp; DATA</text>
+
+  <!-- ===================== EDGES (drawn first, under boxes) ===================== -->
+  <!-- Dashboard UI <-> /api/dashboard -->
+  <path class="edge slate" d="M232,185 H300" marker-end="url(#ar-slate)"/>
+  <path class="edge slate dash" d="M300,205 H232" marker-end="url(#ar-slate)"/>
+  <text class="t-edge-m" x="238" y="178">JSON</text>
+
+  <!-- Chat UI -> /api/chat -->
+  <path class="edge teal" d="M232,300 H300" marker-end="url(#ar-teal)"/>
+  <!-- SSE stream back -->
+  <path class="edge teal dash" d="M300,320 H232" marker-end="url(#ar-teal)"/>
+  <text class="t-edge-m" x="243" y="337">SSE</text>
+
+  <!-- Ingest button UI -> /api/calls/ingest -->
+  <path class="edge indigo" d="M232,255 H300" marker-end="url(#ar-indigo)"/>
+
+  <!-- Transcripts -> Discovery Agent -->
+  <path class="edge indigo" d="M232,470 C330,470 430,200 578,182" marker-end="url(#ar-indigo)"/>
+
+  <!-- /api/calls/ingest -> Discovery Agent -->
+  <path class="edge indigo" d="M510,266 C545,266 555,200 578,186" marker-end="url(#ar-indigo)"/>
+
+  <!-- /api/chat -> Reporting Agent -->
+  <path class="edge teal" d="M510,321 C545,321 555,345 578,350" marker-end="url(#ar-teal)"/>
+
+  <!-- Discovery Agent -> runtime -->
+  <path class="edge indigo" d="M640,232 V448" marker-end="url(#ar-indigo)"/>
+  <!-- Reporting Agent -> runtime -->
+  <path class="edge teal" d="M760,402 V448" marker-end="url(#ar-teal)"/>
+  <text class="t-edge" x="648" y="432">run_loop()</text>
+
+  <!-- runtime -> Claude API -->
+  <path class="edge slate" d="M812,490 C850,490 858,250 878,228" marker-end="url(#ar-slate)"/>
+  <path class="edge slate dash" d="M878,250 C858,270 852,500 812,510" marker-end="url(#ar-slate)"/>
+  <text class="t-edge-m" x="820" y="360">messages +</text>
+  <text class="t-edge-m" x="820" y="375">tool_use</text>
+
+  <!-- runtime -> CRM (dispatch) -->
+  <path class="edge slate" d="M812,540 C845,540 855,505 878,500" marker-end="url(#ar-slate)"/>
+  <text class="t-edge-m" x="815" y="560">dispatch()</text>
+
+  <!-- /api/dashboard -> CRM (direct aggregate, no LLM) -->
+  <path class="edge slate" d="M510,175 C560,120 1095,120 1095,398" marker-end="url(#ar-slate)"/>
+  <text class="t-edge" x="700" y="108">aggregate · no LLM</text>
+
+  <!-- ===================== BOXES ===================== -->
+
+  <!-- Presentation container -->
+  <rect class="container" x="40" y="110" width="192" height="300" rx="14"/>
+  <text class="t-sub" x="52" y="130" style="font-weight:700;fill:#cbd5e1">Browser UI · static/</text>
+  <rect class="box" x="52" y="142" width="168" height="86" rx="12"/>
+  <text class="t-title" x="66" y="172">Dashboard</text>
+  <text class="t-sub" x="66" y="190">pipeline, stat tiles,</text>
+  <text class="t-sub" x="66" y="206">deals &amp; activity</text>
+  <rect class="box teal" x="52" y="258" width="168" height="86" rx="12"/>
+  <text class="t-title" x="66" y="288">Chat panel</text>
+  <text class="t-sub" x="66" y="306">asks the reporting</text>
+  <text class="t-sub" x="66" y="322">agent, streams reply</text>
+
+  <!-- Transcripts (input) -->
+  <rect class="box indigo" x="40" y="430" width="192" height="92" rx="12"/>
+  <text class="t-title" x="56" y="462">Call transcripts</text>
+  <text class="t-sub" x="56" y="482">data/calls/NN-*.md</text>
+  <text class="t-sub" x="56" y="500">(stand-in for a</text>
+  <text class="t-sub" x="56" y="516">vector DB)</text>
+
+  <!-- API layer container -->
+  <rect class="container" x="300" y="110" width="210" height="412" rx="14"/>
+  <text class="t-sub" x="312" y="130" style="font-weight:700;fill:#cbd5e1">FastAPI · server.py</text>
+  <rect class="chip" x="312" y="152" width="186" height="44" rx="8"/>
+  <text class="t-chip" x="324" y="179">GET /api/dashboard</text>
+  <rect class="chip rd" x="312" y="205" width="186" height="38" rx="8"/>
+  <text class="t-chip" x="324" y="229">GET /api/calls</text>
+  <rect class="chip" x="312" y="248" width="186" height="38" rx="8"/>
+  <text class="t-chip" x="324" y="272">POST …/ingest</text>
+  <rect class="chip rd" x="312" y="303" width="186" height="38" rx="8"/>
+  <text class="t-chip" x="324" y="327">POST /api/chat · SSE</text>
+  <rect class="box" x="312" y="358" width="186" height="150" rx="12"/>
+  <text class="t-title" x="326" y="386">Orchestration</text>
+  <text class="t-sub" x="326" y="408">· dashboard reads CRM</text>
+  <text class="t-sub" x="326" y="426">  directly (no model)</text>
+  <text class="t-sub" x="326" y="444">· ingest → Discovery</text>
+  <text class="t-sub" x="326" y="462">· chat → Reporting</text>
+  <text class="t-sub" x="326" y="480">· serves static/ UI</text>
+  <text class="t-sub" x="326" y="498">· SSE via thread+queue</text>
+
+  <!-- Discovery Agent -->
+  <rect class="box indigo" x="578" y="130" width="234" height="102" rx="12"/>
+  <text class="t-title" x="594" y="160">Discovery Agent</text>
+  <text class="t-sub" x="594" y="180">discovery.py · ingest()</text>
+  <text class="t-sub" x="594" y="200">reads transcript, reconciles</text>
+  <text class="t-sub" x="594" y="218">CRM · READ + WRITE tools</text>
+
+  <!-- Reporting Agent -->
+  <rect class="box teal" x="578" y="300" width="234" height="102" rx="12"/>
+  <text class="t-title" x="594" y="330">Reporting Agent</text>
+  <text class="t-sub" x="594" y="350">reporting.py · answer()</text>
+  <text class="t-sub" x="594" y="370">chat, per-session history</text>
+  <text class="t-sub" x="594" y="388">READ-only tools · streams</text>
+
+  <!-- Shared runtime -->
+  <rect class="box" x="578" y="448" width="234" height="126" rx="12"/>
+  <text class="t-title" x="594" y="476">Shared runtime</text>
+  <text class="t-sub" x="594" y="496">agent_loop.py — manual</text>
+  <text class="t-sub" x="594" y="513">Messages-API tool loop</text>
+  <text class="t-sub" x="594" y="531">tools.py — 10 schemas</text>
+  <text class="t-sub" x="594" y="548">(6 read / 4 write), dispatch</text>
+  <text class="t-sub" x="594" y="566">adaptive thinking · ≤12 turns</text>
+
+  <!-- Claude API -->
+  <rect class="box api" x="878" y="150" width="234" height="104" rx="12"/>
+  <text class="t-title" x="894" y="182">Claude API</text>
+  <text class="t-sub" x="894" y="204">claude-opus-5-5</text>
+  <text class="t-sub" x="894" y="222">adaptive thinking</text>
+  <text class="t-sub" x="894" y="240">streaming · tool_use</text>
+
+  <!-- CRM datastore -->
+  <rect class="box data" x="878" y="398" width="234" height="150" rx="12"/>
+  <text class="t-title" x="894" y="428">CRM datastore</text>
+  <text class="t-sub" x="894" y="450">data/crm.json · atomic write</text>
+  <text class="t-sub" x="894" y="474">· accounts</text>
+  <text class="t-sub" x="894" y="492">· contacts</text>
+  <text class="t-sub" x="894" y="510">· opportunities</text>
+  <text class="t-sub" x="894" y="528">· activities</text>
+
+</svg>
+</div>
+
+<section class="flows">
+  <div class="flowcard ingest">
+    <h3>1 · Ingest a call</h3>
+    <p>A transcript (or the <strong>Ingest</strong> button → <code>POST /api/calls/ingest</code>) hands the markdown to the
+    Discovery Agent. It reads the current CRM, reconciles entities, and writes accounts, contacts, opportunities and a
+    logged activity back to <code>crm.json</code>.</p>
+  </div>
+  <div class="flowcard report">
+    <h3>2 · Ask for the freshest data</h3>
+    <p>The chat panel streams a question to <code>POST /api/chat</code>. The Reporting Agent runs read-only tools against
+    the live CRM and <strong>streams</strong> a grounded answer back over SSE — always reflecting the latest ingest.</p>
+  </div>
+  <div class="flowcard dash">
+    <h3>3 · Dashboard</h3>
+    <p><code>GET /api/dashboard</code> aggregates <code>crm.json</code> directly in Python — <strong>no model call</strong> —
+    for stat tiles, pipeline-by-stage, open deals and recent activity. Re-fetched after an ingest so the board visibly updates.</p>
+  </div>
+</section>
+
+<footer>
+  Scope Creepers — Sales Call Management · local Messages-API tool loop, no managed/cloud agent runtime ·
+  JSON CRM + markdown transcripts stand in for a real CRM and vector DB. &nbsp;Open this file directly, or at
+  <code>/architecture.html</code> when the server is running.
+</footer>
+</body>
+</html>
